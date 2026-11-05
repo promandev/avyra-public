@@ -1,0 +1,46 @@
+{
+  "name": "pradomotica",
+  "version": "0.15.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-all.mjs",
+    "dev:next": "pnpm --filter @pradomotica/web dev",
+    "dev:db": "node scripts/dev-db.mjs",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "playwright test",
+    "db:generate": "pnpm --filter @pradomotica/db generate",
+    "db:migrate": "pnpm --filter @pradomotica/db migrate",
+    "db:studio": "pnpm --filter @pradomotica/db studio",
+    "db:seed": "node --env-file=apps/web/.env.local scripts/seed-test-user.mjs",
+    "db:create-admin": "node --env-file=apps/web/.env.local scripts/create-admin.mjs",
+    "db:migrate-household": "node --env-file=apps/web/.env.local scripts/migrate-household.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "argon2": "^0.41.1",
+    "embedded-postgres": "18.3.0-beta.17",
+    "postgres": "^3.4.5",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.8",
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@embedded-postgres/windows-x64",
+      "argon2",
+      "esbuild",
+      "sharp",
+      "unrs-resolver"
+    ]
+  },
+  "dependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

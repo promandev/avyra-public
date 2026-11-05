@@ -1,0 +1,46 @@
+api:
+  listen: ":1984"
+
+log:
+  level: info
+
+# go2rtc — configuración para VPS/Raspberry Pi (PLANTILLA, sin credenciales reales)
+#
+# Las cámaras YiHack envían el stream vía RTMP push al servidor.
+# go2rtc escucha RTMP en el puerto 1935 y registra cada stream
+# automáticamente con el nombre de la key del RTMP URL.
+#
+# Configuración en cada cámara YiHack:
+#   RTMP Server:  rtmp://<IP-SERVIDOR>:1935/live/<DEVICE-ID>
+#
+# Ejemplo: si el device ID de la cámara es "00000000-0000-0000-0000-000000000000",
+# la URL RTMP sería:
+#   rtmp://<IP-SERVIDOR>:1935/live/00000000-0000-0000-0000-000000000000
+#
+# go2rtc recibirá el stream y lo expondrá como WebRTC/HLS automáticamente.
+
+rtmp:
+  listen: ":1935"
+
+# WebRTC ICE para acceso LAN (tablet WHIP push y navegador WebRTC pull).
+# - listen: :8555 es el puerto UDP/TCP donde go2rtc acepta conexiones ICE.
+# - candidates: la IP LAN del host + el puerto 8555 expuesto en Docker.
+#   El navegador (en la misma LAN) conectará a esa IP:8555 UDP.
+#
+# AVISO: este valor NO se actualiza solo. Si el host cambia de IP (router
+# nuevo, lease DHCP distinto) el candidato queda apuntando a una IP muerta,
+# ICE nunca conecta y la vista en directo cae al HLS sin avisar. Cada vez que
+# toques la red: comprueba `hostname -I` en el host, ajusta la IP de abajo en
+# el fichero VIVO (infra/data/go2rtc/go2rtc.yaml) y reinicia el contenedor.
+# Lo más sano es fijar una reserva DHCP para el host en el router.
+webrtc:
+  listen: ":8555"
+  candidates:
+    - LAN_HOST_IP:8555
+
+# Los streams se crean dinámicamente cuando la cámara empieza a enviar RTMP,
+# o vía la API REST desde la app Next.js (la mayoría de cámaras/credenciales
+# reales NO deben declararse aquí en texto plano — usa la app para registrarlas
+# cifradas en la base de datos). Este fichero vive en el repo, así que cualquier
+# valor aquí debe tratarse como público.
+streams: {}

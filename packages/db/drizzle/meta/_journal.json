@@ -1,0 +1,160 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1778437603705,
+      "tag": "0000_slippery_lady_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778536001568,
+      "tag": "0001_strong_blindfold",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747094400000,
+      "tag": "0002_oauth_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1747526400000,
+      "tag": "0003_camera_motion_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1747699200000,
+      "tag": "0004_admin_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779137369343,
+      "tag": "0005_modern_selene",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1747872000000,
+      "tag": "0006_tablet_clip_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1748048400000,
+      "tag": "0007_thermostat_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1748134800000,
+      "tag": "0008_schedule_hvac_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1748221200000,
+      "tag": "0009_schedule_days_array",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1748394000000,
+      "tag": "0010_ac_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1757505600000,
+      "tag": "0011_streaming_miner_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1757952000000,
+      "tag": "0012_push_enabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1758067200000,
+      "tag": "0013_vacuums",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1758153600000,
+      "tag": "0014_vacuum_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1758240000000,
+      "tag": "0015_streaming_viewer",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1758326400000,
+      "tag": "0016_push_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1758412800000,
+      "tag": "0017_camera_diag_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1759190400000,
+      "tag": "0018_shopping_list_prefs",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1759276800000,
+      "tag": "0019_finance",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1759881600000,
+      "tag": "0020_device_push_prefs",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1761350400000,
+      "tag": "0021_litter_box",
+      "breakpoints": true
+    }
+  ]
+}

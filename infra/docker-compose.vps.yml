@@ -1,0 +1,136 @@
+# Pradomotica — docker-compose para VPS
+#
+# Perfil diseñado para correr en un VPS (Hetzner, etc.) sin hardware local.
+# Las cámaras envían el stream vía RTMP push; no hay HA ni red de cámaras.
+#
+# Uso:
+#   cp .env.example .env   # rellenar valores
+#   docker compose -f docker-compose.vps.yml up -d
+
+name: pradomotica
+
+services:
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    restart: unless-stopped
+    networks:
+      - internal
+    # No exponemos puertos al exterior: cloudflared hace de proxy.
+    # Puerto RTMP para que las cámaras puedan enviar su stream al VPS.
+    ports:
+      - "1935:1935"
+      # Puerto WebRTC go2rtc: UDP e ICE-TCP para navegadores y tablet WHIP
+      - "8555:8555/udp"
+      - "8555:8555/tcp"
+    volumes:
+      - ./go2rtc/go2rtc.vps.yaml:/config/go2rtc.yaml
+    environment:
+      - TZ=Europe/Madrid
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:1984/api"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  app:
+    image: ghcr.io/youruser/avyra-app:latest
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      go2rtc:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_SECRET: ${AUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      APP_URL: ${APP_URL}
+      GO2RTC_URL: http://go2rtc:1984
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN}
+      CAMERA_WEBHOOK_SECRET: ${CAMERA_WEBHOOK_SECRET}
+    networks:
+      - internal
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - app
+    networks:
+      - internal
+
+  db-cleanup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          NOW=$$(date '+%H:%M')
+          if [ "$$NOW" = "03:00" ]; then
+            psql "$$DATABASE_URL" \
+              -c "DELETE FROM sessions WHERE expires_at < NOW();" \
+              -c "DELETE FROM login_attempts WHERE created_at < NOW() - INTERVAL '30 days';" \
+              -c "DELETE FROM audit_log WHERE created_at < NOW() - INTERVAL '90 days';" \
+              -c "DELETE FROM household_invites WHERE expires_at < NOW() AND accepted_at IS NULL;"
+          fi
+          sleep 60
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TZ: Europe/Madrid
+    networks:
+      - internal
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Solo vigila contenedores con la etiqueta watchtower.enable=true
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # Comprueba nuevas imágenes cada 5 minutos
+      WATCHTOWER_POLL_INTERVAL: "300"
+      # Elimina imágenes antiguas tras actualizar
+      WATCHTOWER_CLEANUP: "true"
+      # Credenciales para descargar imágenes privadas de ghcr.io
+      REPO_USER: youruser
+      REPO_PASS: ${GHCR_TOKEN}
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge

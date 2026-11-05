@@ -1,0 +1,425 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   AVYRA — Sistema visual "Hogar Vivo"
+   La interfaz reacciona al estado real de la casa: el ambiente se tiñe
+   cálido con la calefacción, frío con el aire y dorado con las luces.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  :root {
+    /* ── Modo claro ─────────────────────────────────────────────── */
+    --background: 250 40% 98%;
+    --foreground: 250 45% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 250 45% 11%;
+
+    --primary: 258 84% 56%;
+    --primary-foreground: 0 0% 100%;
+
+    --muted: 250 30% 94%;
+    --muted-foreground: 250 12% 45%;
+
+    --accent: 250 35% 94%;
+    --accent-foreground: 250 45% 12%;
+
+    --destructive: 356 75% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 250 22% 88%;
+    --ring: 258 84% 56%;
+
+    --radius: 0.75rem;
+
+    /* ── Colores de estado del hogar ────────────────────────────── */
+    --state-light: 43 96% 50%;  /* luces encendidas    → oro   */
+    --state-heat: 18 92% 54%;   /* calefacción activa  → ámbar */
+    --state-cool: 192 92% 45%;  /* aire activo         → cian  */
+    --state-live: 152 65% 38%;  /* cámaras en línea    → verde */
+
+    /* Variante para TEXTO sobre superficie teñida. El color de estado a plena
+       saturación no llega a contraste como texto sobre fondo claro, así que
+       cada estado tiene su tono legible. Es lo que antes se resolvía a mano
+       con amber-700 / orange-800 / sky-800 repartidos por los componentes. */
+    --state-light-fg: 35 92% 32%;
+    --state-heat-fg: 15 85% 38%;
+    --state-cool-fg: 196 90% 30%;
+    --state-live-fg: 152 65% 26%;
+
+    /* Opacidad base del halo ambiental: el modo claro necesita menos. */
+    --amb-strength: 0.55;
+    --grain-opacity: 0.025;
+  }
+
+  .dark {
+    /* ── Modo oscuro ────────────────────────────────────────────── */
+    --background: 252 34% 6%;
+    --foreground: 250 30% 96%;
+
+    --card: 252 28% 10%;
+    --card-foreground: 250 30% 96%;
+
+    --primary: 262 92% 70%;
+    --primary-foreground: 252 45% 8%;
+
+    --muted: 252 20% 16%;
+    --muted-foreground: 250 14% 66%;
+
+    --accent: 252 22% 17%;
+    --accent-foreground: 250 30% 96%;
+
+    --destructive: 356 80% 62%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 252 20% 20%;
+    --ring: 262 92% 70%;
+
+    --state-light: 45 96% 58%;
+    --state-heat: 20 95% 60%;
+    --state-cool: 190 95% 55%;
+    --state-live: 152 70% 48%;
+
+    /* Sobre fondo oscuro el texto teñido necesita subir, no bajar. */
+    --state-light-fg: 45 96% 72%;
+    --state-heat-fg: 24 95% 72%;
+    --state-cool-fg: 190 95% 70%;
+    --state-live-fg: 152 70% 62%;
+
+    --amb-strength: 1;
+    --grain-opacity: 0.04;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* El halo ambiental vive en su propia capa fija (ver .ambient-*), así
+       que el body sólo aporta el tono base de reposo. */
+    background-image: radial-gradient(
+      ellipse 100% 70% at 50% -25%,
+      hsl(var(--primary) / 0.1),
+      transparent 65%
+    );
+    background-attachment: fixed;
+  }
+
+  /* Escala tipográfica base.
+     Antes sólo el móvil subía a 17 px y el escritorio se quedaba en los 16 del
+     navegador, que en una pantalla grande se lee pequeño. Ahora los 17 px son
+     el suelo en todas partes y hay un escalón más en monitores anchos. Como
+     Tailwind mide en rem, los espaciados acompañan y las proporciones no se
+     rompen. */
+  html {
+    font-size: 17px;
+  }
+
+  @media (min-width: 1280px) {
+    html {
+      font-size: 18px;
+    }
+  }
+
+  @media (min-width: 1920px) {
+    html {
+      font-size: 19px;
+    }
+  }
+
+  /* Las cifras (temperaturas, contadores) se leen mejor tabulares. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+}
+
+/* ═══ Capa ambiental "Hogar Vivo" ═══════════════════════════════════════
+   Halos superpuestos, uno por subsistema. Su visibilidad la fija el
+   componente AmbientBackdrop según lo que esté encendido ahora mismo, y
+   la transición de 1,6 s hace que la casa "respire" al cambiar de estado. */
+.ambient-root {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-layer {
+  position: absolute;
+  inset: -25%;
+  opacity: 0;
+  transition: opacity 1600ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity;
+}
+
+.ambient-layer[data-on='true'] {
+  opacity: calc(var(--layer-intensity, 1) * var(--amb-strength));
+}
+
+.ambient-light {
+  background: radial-gradient(
+    ellipse 55% 45% at 78% 8%,
+    hsl(var(--state-light) / 0.3),
+    transparent 62%
+  );
+  animation: ambient-drift-a 26s ease-in-out infinite;
+}
+
+.ambient-heat {
+  background: radial-gradient(
+    ellipse 60% 50% at 12% 88%,
+    hsl(var(--state-heat) / 0.26),
+    transparent 62%
+  );
+  animation: ambient-drift-b 32s ease-in-out infinite;
+}
+
+.ambient-cool {
+  background: radial-gradient(
+    ellipse 62% 52% at 88% 82%,
+    hsl(var(--state-cool) / 0.24),
+    transparent 62%
+  );
+  animation: ambient-drift-a 29s ease-in-out infinite reverse;
+}
+
+/* Halo de marca: siempre presente, da el tono violeta de Avyra. */
+.ambient-brand {
+  background: radial-gradient(
+    ellipse 70% 55% at 50% -10%,
+    hsl(var(--primary) / 0.22),
+    transparent 60%
+  );
+  opacity: calc(0.85 * var(--amb-strength));
+  animation: ambient-drift-b 38s ease-in-out infinite;
+}
+
+/* Grano fino: rompe las bandas de los degradados y sube la sensación de
+   material. Es un SVG de ruido fractal embebido. */
+.ambient-grain {
+  position: absolute;
+  inset: 0;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes ambient-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(3%, 4%, 0) scale(1.12); }
+}
+
+@keyframes ambient-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50%      { transform: translate3d(-4%, -3%, 0) scale(1); }
+}
+
+/* ─── View Transitions (theme toggle curtain) ─────────────────────── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* ─── Keyframe animations ─────────────────────────────────────────── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-22px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* Latido suave para los indicadores "hay algo encendido". */
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 currentColor; opacity: 0.85; }
+  70%  { box-shadow: 0 0 0 7px transparent; opacity: 1; }
+  100% { box-shadow: 0 0 0 0 transparent; opacity: 0.85; }
+}
+
+/* ─── Animation utility classes ────────────────────────────────────── */
+.animate-fade-in-up    { animation: fade-in-up    0.45s ease-out both; }
+.animate-fade-in-down  { animation: fade-in-down  0.35s ease-out both; }
+.animate-fade-in       { animation: fade-in       0.3s  ease-out both; }
+.animate-scale-in      { animation: scale-in      0.35s ease-out both; }
+.animate-slide-in-left { animation: slide-in-left 0.4s  ease-out both; }
+.animate-sheet-up      { animation: sheet-up      0.3s  ease-out both; }
+.animate-pulse-ring    { animation: pulse-ring    2.2s  ease-out infinite; }
+
+/* ─── Active device glow animation ────────────────────────────────── */
+@keyframes glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 10px currentColor);
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 10px currentColor) drop-shadow(0 0 22px currentColor) drop-shadow(0 0 40px currentColor);
+    transform: scale(1.15);
+  }
+}
+.animate-glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Stagger containers ───────────────────────────────────────────── */
+/* Generic stagger (fade-up) */
+.stagger > * {
+  opacity: 0;
+  animation: fade-in-up 0.45s ease-out both;
+}
+.stagger > *:nth-child(1)    { animation-delay: 0ms;   }
+.stagger > *:nth-child(2)    { animation-delay: 70ms;  }
+.stagger > *:nth-child(3)    { animation-delay: 140ms; }
+.stagger > *:nth-child(4)    { animation-delay: 210ms; }
+.stagger > *:nth-child(5)    { animation-delay: 280ms; }
+.stagger > *:nth-child(6)    { animation-delay: 350ms; }
+.stagger > *:nth-child(n+7)  { animation-delay: 420ms; }
+
+/* Nav stagger (slide-from-left) */
+.stagger-nav > * {
+  opacity: 0;
+  animation: slide-in-left 0.4s ease-out both;
+}
+.stagger-nav > *:nth-child(1) { animation-delay: 120ms; }
+.stagger-nav > *:nth-child(2) { animation-delay: 175ms; }
+.stagger-nav > *:nth-child(3) { animation-delay: 230ms; }
+.stagger-nav > *:nth-child(4) { animation-delay: 285ms; }
+.stagger-nav > *:nth-child(5) { animation-delay: 340ms; }
+.stagger-nav > *:nth-child(6) { animation-delay: 395ms; }
+.stagger-nav > *:nth-child(7) { animation-delay: 450ms; }
+
+@layer components {
+  /* Primitiva de superficie. La usan ya casi todas las tarjetas de la app,
+     así que el brillo especular superior mejora todas de una vez. */
+  .glass {
+    @apply relative border border-border/50 bg-card/60;
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    box-shadow:
+      0 1px 2px hsl(250 45% 11% / 0.04),
+      0 8px 28px -12px hsl(250 45% 11% / 0.12);
+  }
+
+  /* Filo de luz en el borde superior: el detalle que da sensación de vidrio. */
+  .glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding-top: 1px;
+    background: linear-gradient(to bottom, hsl(0 0% 100% / 0.5), transparent 45%);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .dark .glass {
+    @apply border-white/[0.07] bg-card/50;
+    box-shadow:
+      0 1px 2px hsl(252 60% 2% / 0.4),
+      0 12px 40px -14px hsl(252 60% 2% / 0.7);
+  }
+
+  .dark .glass::before {
+    background: linear-gradient(to bottom, hsl(0 0% 100% / 0.14), transparent 45%);
+  }
+
+  /* Superficie elevada para las piezas protagonistas (héroe, tarjetas de
+     estado). Mismo vidrio, más aire y más profundidad. */
+  .surface-hero {
+    @apply glass rounded-3xl;
+    box-shadow:
+      0 1px 2px hsl(250 45% 11% / 0.05),
+      0 2px 8px hsl(250 45% 11% / 0.04),
+      0 24px 64px -24px hsl(var(--primary) / 0.3);
+  }
+
+  .dark .surface-hero {
+    box-shadow:
+      0 1px 2px hsl(252 60% 2% / 0.5),
+      0 24px 70px -22px hsl(var(--primary) / 0.35);
+  }
+
+  /* Texto con degradado de marca, para los titulares. */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--foreground)),
+      hsl(var(--foreground) / 0.72) 40%,
+      hsl(var(--primary)) 115%
+    );
+  }
+}
+
+/* ─── Themed scrollbar (for styled-scrollbar class) ────────────────── */
+.styled-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+
+.styled-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.styled-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.styled-scrollbar::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.25);
+  border-radius: 9999px;
+}
+
+.styled-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.45);
+}
+
+/* ─── Accesibilidad: respetar "reducir movimiento" ─────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .ambient-layer,
+  .ambient-brand,
+  .animate-glow,
+  .animate-pulse-ring {
+    animation: none !important;
+  }
+
+  .stagger > *,
+  .stagger-nav > * {
+    animation-delay: 0ms !important;
+  }
+}

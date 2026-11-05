@@ -1,0 +1,51 @@
+# Pradomotica — Caddy reverse proxy
+#
+# - HTTPS automático para hosts públicos (ACME) o internos (TLS interno).
+# - Proxy a la app Next.js y a Home Assistant.
+# - Cabeceras de seguridad globales reforzadas.
+#
+# Acceso local LAN:  https://pradomotica.local
+# Acceso remoto:     Cloudflare Tunnel → app:3000 directamente (sin pasar por Caddy).
+#                    Si quieres pasar por Caddy, añade un bloque HTTP abajo
+#                    y configura el tunnel apuntando a http://caddy:80.
+
+{
+	# Email para ACME (Let's Encrypt). Vacío => TLS interno.
+	# email admin@example.com
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+(security_headers) {
+	header {
+		# HSTS — un año, incluye subdominios; aplicar solo cuando uses HTTPS público.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=(), interest-cohort=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		# Eliminar fingerprinting del servidor.
+		-Server
+		-X-Powered-By
+	}
+}
+
+pradomotica.local {
+	tls internal
+	import security_headers
+
+	encode zstd gzip
+
+	# WebSocket para Home Assistant montado bajo /ha (opcional).
+	@ha path /ha/*
+	handle @ha {
+		uri strip_prefix /ha
+		reverse_proxy homeassistant:8123
+	}
+
+	# App principal
+	reverse_proxy app:3000
+}

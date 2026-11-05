@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Database
+.postgres-data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Drizzle
+drizzle/migrations/meta/_journal.json.bak
+
+# Secrets / runtime
+infra/data/
+infra/secrets/
+*.pem
+*.key
+!**/*.example.*
+
+# Coverage
+coverage/
+
+# Caches
+.eslintcache
+.cache/
+
+infra/go2rtc/go2rtc.yaml

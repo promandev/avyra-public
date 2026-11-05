@@ -1,0 +1,309 @@
+name: pradomotica
+
+# Los registros de Docker no tienen tope por defecto: en esta Pi un contenedor
+# hablador se come la SD, y con la tarjeta llena todo se vuelve lentísimo. Cada
+# servicio hereda este límite: 3 archivos de 10 MB como mucho.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - internal
+    ports:
+      # 1984 (HTTP control API) is intentionally NOT published — it has no
+      # authentication and is only used server-to-server by `app` over the
+      # internal Docker network (GO2RTC_URL=http://go2rtc:1984). Publishing
+      # it to the host would let any LAN device view/reconfigure every camera.
+      # 8555 stays published: it's the WebRTC ICE port and browsers on the
+      # LAN connect to it directly (see go2rtc.vps.yaml `candidates`).
+      - "8555:8555/udp"
+      - "8555:8555/tcp"
+    volumes:
+      - ./data/go2rtc:/config
+    environment:
+      - TZ=Europe/Madrid
+
+  recorder:
+    build: ./recorder
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - go2rtc
+    environment:
+      - TZ=Europe/Madrid
+      - GO2RTC_URL=http://go2rtc:1984
+      - RTSP_URL=rtsp://go2rtc:8554
+      - RETENTION_DAYS=30
+      - SEGMENT_MINUTES=30
+    volumes:
+      - ./data/recordings:/recordings
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    restart: unless-stopped
+    logging: *default-logging
+    privileged: true
+    # network_mode: host  # descomentar si necesitas mDNS/SSDP para descubrir dispositivos
+    volumes:
+      - ./data/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - internal
+      - cameras
+    ports:
+      - "8123:8123"
+
+  app:
+    image: ghcr.io/youruser/avyra-app:latest
+    restart: unless-stopped
+    logging: *default-logging
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      AUTH_SECRET: ${AUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      APP_URL: ${APP_URL}
+      GO2RTC_URL: http://go2rtc:1984
+      HA_BASE_URL: ${HA_BASE_URL}
+      HA_TOKEN: ${HA_TOKEN}
+      HA_WEBHOOK_SECRET: ${HA_WEBHOOK_SECRET}
+      CAMERA_WEBHOOK_SECRET: ${CAMERA_WEBHOOK_SECRET}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN}
+      TWITCH_MINER_URL: http://twitch-miner:8080
+      CUPS_URL: http://cups:631
+      PRINTER_URI: ${PRINTER_URI:-}
+      VAULTWARDEN_URL: http://vaultwarden:80
+      VAULT_PUBLIC_URL: ${VAULT_PUBLIC_URL:-}
+      VAULT_BACKUP_DIR: /vault-backups
+      # Sección Sistema: explorador de archivos con escritura sobre el home del
+      # host (pedido así por el dueño) y datos del exportador de SSH.
+      PANEL_FILE_ROOT: ${PANEL_FILE_ROOT:-/home/youruser}
+    # Mismo uid/gid que el dueño del home: sin esto la app (uid 1001 de la
+    # imagen) no puede ni listar /home/youruser, que es drwx------.
+    user: "${PANEL_UID:-1000}:${PANEL_GID:-1000}"
+    volumes:
+      # Sólo lectura: la app enseña el estado de las copias, no las toca.
+      - ./data/vault-backups:/vault-backups:ro
+      # Mismo path dentro y fuera, para que las rutas que enseña coincidan.
+      - ${PANEL_FILE_ROOT:-/home/youruser}:${PANEL_FILE_ROOT:-/home/youruser}
+    networks:
+      - internal
+
+  # ── Cloudflare Tunnel ────────────────────────────────────────────────────────
+  # Expone la app al exterior sin abrir puertos en el router.
+  # Pasos previos (una sola vez):
+  #   1. Crea un tunnel en https://one.dash.cloudflare.com → Networks → Tunnels
+  #   2. Copia el token y ponlo en CLOUDFLARE_TUNNEL_TOKEN del .env
+  #   3. En la configuración del tunnel añade una "Public Hostname":
+  #        Hostname: tu-subdominio.tudominio.com
+  #        Service:  http://app:3000
+  # El tráfico de cámara (WebRTC/go2rtc) necesita una ruta adicional:
+  #        Hostname: stream.tudominio.com
+  #        Service:  http://go2rtc:1984
+  # Y la bóveda de contraseñas otra:
+  #        Hostname: vault.tudominio.com
+  #        Service:  http://vaultwarden:80
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    logging: *default-logging
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - app
+    networks:
+      - internal
+
+  db-cleanup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "/scripts/db-cleanup.sh"]
+    volumes:
+      - ./scripts/db-cleanup.sh:/scripts/db-cleanup.sh:ro
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TZ: Europe/Madrid
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - app
+      - homeassistant
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./Caddyfile:/etc/caddy/Caddyfile:ro"
+      - "./data/caddy/data:/data"
+      - "./data/caddy/config:/config"
+    networks:
+      - internal
+
+  # ── Minero de drops de Twitch ────────────────────────────────────────────────
+  # Acredita tiempo de visionado enviando los eventos de "minuto visto" que
+  # emitiría el reproductor web. NO descarga vídeo ni audio, por eso cabe en la
+  # Pi de 2 GB: un Chromium reproduciendo se comería toda la RAM libre.
+  #
+  # Su API no tiene autenticación propia, así que NO se publica ningún puerto:
+  # sólo se llega a él desde `app` por la red interna, y la app exige super
+  # admin. Si publicas 8080 en la LAN, cualquiera en casa controla tu cuenta.
+  #
+  # OJO con `mem_limit`: esta Pi arranca SIN el controlador `memory` de cgroups
+  # (`/sys/fs/cgroup/cgroup.controllers` sólo lista cpuset cpu io pids), así que
+  # Docker lo ignora en silencio. Para activarlo hay que añadir
+  # `cgroup_enable=memory cgroup_memory=1` a /boot/firmware/cmdline.txt y
+  # reiniciar, lo que tira abajo toda la casa un par de minutos. Mientras tanto
+  # la red de seguridad es el swap. El límite se queda escrito para que entre en
+  # vigor solo el día que se reinicie con esa opción.
+  twitch-miner:
+    image: rangermix/twitch-drops-miner:latest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: Europe/Madrid
+    volumes:
+      - ./data/twitch-miner:/app/data
+    mem_limit: 400m
+    networks:
+      - internal
+
+  # ── Servidor de impresión ────────────────────────────────────────────────────
+  # CUPS convierte PDF e imágenes al raster que entiende la HP DeskJet 2600 y
+  # se los manda por IPP. No publica puerto: sólo `app` llega a él, y la app
+  # exige sesión de un miembro del hogar. La impresora va fijada por IP en
+  # PRINTER_URI (.env), así que necesita una reserva DHCP, igual que Tapo.
+  cups:
+    build: ./cups
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: Europe/Madrid
+      PRINTER_URI: ${PRINTER_URI:-}
+      PRINTER_QUEUE: deskjet
+    networks:
+      - internal
+
+  # ── Bóveda de contraseñas ────────────────────────────────────────────────────
+  # Vaultwarden: servidor compatible con Bitwarden, así que valen sus apps
+  # oficiales (extensión del navegador, móvil con autorrelleno, escritorio).
+  # El cifrado se hace en el cliente con la contraseña maestra: aquí sólo se
+  # guarda texto cifrado, y ni la Pi ni Avyra pueden leer las contraseñas.
+  #
+  # No publica puerto. Se llega por el túnel de Cloudflare con una Public
+  # Hostname aparte (vault.<dominio> → http://vaultwarden:80), y la app le
+  # pregunta por la red interna sólo para saber si está vivo.
+  #
+  # NO pongas Cloudflare Access delante del subdominio: las apps de Bitwarden
+  # no saben pasar su pantalla de login y dejarían de sincronizar.
+  #
+  # Registro cerrado. Para crear la primera cuenta: VAULT_SIGNUPS_ALLOWED=true
+  # en el .env, `docker compose up -d vaultwarden`, regístrate y vuelve a
+  # ponerlo a false (y otro `up -d`). Sin ADMIN_TOKEN el panel /admin no existe.
+  vaultwarden:
+    image: vaultwarden/server:latest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: Europe/Madrid
+      DOMAIN: ${VAULT_PUBLIC_URL:-}
+      SIGNUPS_ALLOWED: ${VAULT_SIGNUPS_ALLOWED:-false}
+      INVITATIONS_ALLOWED: "false"
+      PASSWORD_HINTS_ALLOWED: "false"
+      SHOW_PASSWORD_HINT: "false"
+      # Tras el túnel todas las peticiones vienen de cloudflared: sin esto el
+      # límite de intentos de login contaría a todo el mundo como una sola IP.
+      IP_HEADER: CF-Connecting-IP
+      LOG_LEVEL: warn
+    volumes:
+      - ./data/vaultwarden:/data
+    networks:
+      - internal
+
+  # Copia diaria de la bóveda (04:00, se guardan 30 días) en
+  # data/vault-backups. Monta los datos en escritura porque sqlite necesita
+  # tocar el -shm del WAL incluso para leer; el script sólo lee.
+  vault-backup:
+    build: ./vault-backup
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - vaultwarden
+    environment:
+      TZ: Europe/Madrid
+      RETENTION_DAYS: 30
+      BACKUP_TIME: "04:00"
+    volumes:
+      - ./data/vaultwarden:/data
+      - ./data/vault-backups:/backups
+    network_mode: none
+
+  # ── Watchtower — auto-actualiza contenedores con label watchtower.enable ──
+  watchtower:
+    image: containrrr/watchtower:latest
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: Europe/Madrid
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_CLEANUP: "true"
+      DOCKER_API_VERSION: "1.41"
+    networks:
+      - internal
+
+networks:
+  # Red interna app <-> postgres <-> HA <-> caddy
+  internal:
+    driver: bridge
+  # Red dedicada para que HA pueda hablar con cámaras en su VLAN.
+  # Configurar como `external: true` si la creas a mano para apuntar a una VLAN.
+  cameras:
+    driver: bridge
