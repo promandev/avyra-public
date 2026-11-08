@@ -611,12 +611,63 @@ export function CameraModal({ cameraId, cameraName, isTablet, tabletPaired, tabl
         manifestLoadingMaxRetry: 2,
         levelLoadingTimeOut: 20_000,
         fragLoadingTimeOut: 30_000,
+        // Nunca saltar hacia el directo ni acelerar: el colchón de abajo es
+        // retraso buscado, no un atraso que corregir.
+        liveMaxLatencyDurationCount: Infinity,
+        maxLiveSyncPlaybackRate: 1,
       });
       hlsRef.current = hls;
       hls.loadSource(hlsUrl);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => undefined);
+
+      // Colchón de buffer. El HLS de go2rtc no es HLS "de verdad": cada
+      // segmento es lo acumulado desde la petición anterior (anuncia 0,5 s
+      // pero trae lo que haya) y el playlist solo lista 2. Arrancar en cuanto
+      // llega el primero deja ~0,5 s de margen, y cualquier tirón de la red
+      // móvil o del túnel congela la imagen → directo entrecortado. Se espera
+      // a tener unos segundos en buffer antes de reproducir, y si se vacía se
+      // pausa hasta recuperarlo (a costa de ~3 s de retraso).
+      const START_CUSHION_S = 3;
+      const REBUFFER_CUSHION_S = 2;
+      let cushion = START_CUSHION_S;
+      let waitingForCushion = true;
+      const bufferedAhead = () => {
+        const b = video.buffered;
+        for (let i = 0; i < b.length; i++) {
+          if (video.currentTime >= b.start(i) - 0.5 && video.currentTime <= b.end(i)) {
+            return b.end(i) - Math.max(video.currentTime, b.start(i));
+          }
+        }
+        return b.length ? b.end(b.length - 1) - b.start(b.length - 1) : 0;
+      };
+      const resume = () => {
+        waitingForCushion = false;
+        video.play().catch(() => {
+          // iOS puede negar play() sin gesto tras una pausa con sonido: mejor
+          // seguir sin audio (el aviso "toca para activar" reaparece) que
+          // quedarse congelado.
+          video.muted = true;
+          setMuted(true);
+          video.play().catch(() => undefined);
+        });
+      };
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        if (waitingForCushion && bufferedAhead() >= cushion) resume();
+      });
+      const onWaiting = () => {
+        if (!hlsRef.current || hlsRef.current !== hls || waitingForCushion) return;
+        waitingForCushion = true;
+        cushion = REBUFFER_CUSHION_S;
+        video.pause();
+      };
+      video.addEventListener('waiting', onWaiting);
+      hls.on(Hls.Events.DESTROYING, () => video.removeEventListener('waiting', onWaiting));
+
+      // go2rtc incluye el AAC de la cámara en el HLS, pero hasAudioTrack solo
+      // lo marcaba el ontrack de WebRTC: en HLS la UI decía "sin audio" y no
+      // ofrecía activarlo aunque el sonido llegaba.
+      hls.on(Hls.Events.BUFFER_CODECS, (_ev: unknown, data: { audio?: unknown }) => {
+        if (data.audio) setHasAudioTrack(true);
       });
       let mediaRecoveries = 0;
       hls.on(Hls.Events.ERROR, (_ev: unknown, data: { fatal: boolean; type?: string; details?: string; response?: { code?: number } }) => {
@@ -641,6 +692,8 @@ export function CameraModal({ cameraId, cameraName, isTablet, tabletPaired, tabl
       // Safari: HLS nativo
       video.src = hlsUrl;
       video.addEventListener('loadedmetadata', () => {
+        const tracks = (video as HTMLVideoElement & { audioTracks?: { length: number } }).audioTracks;
+        if (!tracks || tracks.length > 0) setHasAudioTrack(true);
         video.play().catch(() => undefined);
       }, { once: true });
       video.addEventListener('error', () => {
@@ -815,6 +868,23 @@ export function CameraModal({ cameraId, cameraName, isTablet, tabletPaired, tabl
 
       const answerSdp = await res.text();
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+      // Fuera de la LAN el único candidato de go2rtc es la IP privada: ICE se
+      // queda en "checking" para siempre. En la LAN conecta en <1 s tras la
+      // respuesta, así que si a los 4 s no hay ICE, no esperar los 10 s del
+      // watchdog con la pantalla en negro.
+      setTimeout(() => {
+        if (pcRef.current !== pc) return;
+        const ice = pc.iceConnectionState;
+        if (ice === 'connected' || ice === 'completed' || video.videoWidth > 0) return;
+        reportCameraIssue(cameraId, {
+          level: 'info',
+          stage: 'webrtc',
+          message: `ICE sin conectar 4 s después de la respuesta (ICE ${ice}) → se pasa a HLS`,
+        });
+        closePC();
+        startHlsStream();
+      }, 4_000);
     } catch (err) {
       if (pcRef.current !== pc) return;
       reportCameraIssue(cameraId, {
