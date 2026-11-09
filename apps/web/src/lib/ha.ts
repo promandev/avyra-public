@@ -98,6 +98,31 @@ function normalizeHaTemperature(
   return Number(value.toFixed(1));
 }
 
+const STATE_READ_TIMEOUT_MS = 10_000;
+const STATE_FAIL_LOG_EVERY_MS = 60_000;
+const lastStateFailLog = new Map<string, number>();
+
+/**
+ * Deja rastro cuando falla la lectura de una entidad (antes se tragaba en
+ * silencio y no había forma de saber por qué la app mostraba un dispositivo
+ * sin datos). Un aviso por entidad y minuto como máximo para no inundar el log.
+ */
+function logStateReadFailure(entityId: string, reason: string): void {
+  const now = Date.now();
+  if (now - (lastStateFailLog.get(entityId) ?? 0) < STATE_FAIL_LOG_EVERY_MS) return;
+  lastStateFailLog.set(entityId, now);
+  console.warn(`[ha] lectura de ${entityId} fallida: ${reason}`);
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    const name = err.name === 'TimeoutError' ? `timeout ${STATE_READ_TIMEOUT_MS / 1000}s` : err.message;
+    const cause = (err as { cause?: { code?: string } }).cause?.code;
+    return cause ? `${name} (${cause})` : name;
+  }
+  return String(err);
+}
+
 /** Fetch the state of a single HA entity. Returns null when HA is not configured or the request fails. */
 export async function getEntityState(entityId: string): Promise<HaState | null> {
   if (!env.HA_BASE_URL || !env.HA_TOKEN) return null;
@@ -105,13 +130,18 @@ export async function getEntityState(entityId: string): Promise<HaState | null> 
     const res = await fetch(`${env.HA_BASE_URL}/api/states/${entityId}`, {
       headers: { Authorization: `Bearer ${env.HA_TOKEN}` },
       cache: 'no-store',
+      signal: AbortSignal.timeout(STATE_READ_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logStateReadFailure(entityId, `HTTP ${res.status}`);
+      return null;
+    }
     const data = (await res.json()) as { state: string };
     const s = data.state;
     if (s === 'on' || s === 'off' || s === 'unavailable' || s === 'unknown') return s;
     return null;
-  } catch {
+  } catch (err) {
+    logStateReadFailure(entityId, describeError(err));
     return null;
   }
 }
@@ -135,10 +165,15 @@ export async function getRawEntityState(entityId: string): Promise<HaRawEntitySt
     const res = await fetch(`${base}/api/states/${entityId}`, {
       headers: { Authorization: `Bearer ${env.HA_TOKEN}` },
       cache: 'no-store',
+      signal: AbortSignal.timeout(STATE_READ_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logStateReadFailure(entityId, `HTTP ${res.status}`);
+      return null;
+    }
     return (await res.json()) as HaRawEntityState;
-  } catch {
+  } catch (err) {
+    logStateReadFailure(entityId, describeError(err));
     return null;
   }
 }
