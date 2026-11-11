@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import type { Route } from 'next';
-import { Camera, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 
 import type { CameraOverview } from '@/lib/home-pulse-types';
-import { Tile } from './tile';
+import { Section } from './section';
 
 /**
  * Cámaras en la portada, SIN imagen.
@@ -41,44 +41,21 @@ export async function CamerasTile({ cameras, className }: { cameras: CameraOverv
   const locale = await getLocale();
 
   const active = cameras.filter((c) => c.enabled).length;
-  // Cámara con el aviso más reciente, si cae dentro de la ventana de "reciente".
-  const latest = cameras
-    .filter((c) => c.enabled && c.lastEventAt)
-    .sort((a, b) => new Date(b.lastEventAt!).getTime() - new Date(a.lastEventAt!).getTime())[0];
-  const recentCamera =
-    latest && Date.now() - new Date(latest.lastEventAt!).getTime() < RECENT_MS ? latest : null;
 
   return (
-    <Tile title={t('cameras')} icon={Camera} href="/dashboard/cameras" hrefLabel={t('seeAll')} className={className}>
-      {/* Estado de conjunto: cuántas vigilan y si alguna ha avisado hace poco. */}
-      <div className="mb-5 flex items-end justify-between gap-4">
-        <div>
-          <p className="tnum text-4xl font-semibold leading-none tracking-tight">
-            {active}
-            <span className="text-lg font-normal text-muted-foreground">/{cameras.length}</span>
-          </p>
-          <p className="mt-1.5 text-sm text-muted-foreground">{t('camerasActive', { count: active })}</p>
-        </div>
-        <span
-          className={[
-            'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium',
-            recentCamera ? 'bg-state-heat/15 text-state-heat-fg' : 'bg-state-live/15 text-state-live-fg',
-          ].join(' ')}
-        >
-          <span
-            className={[
-              'size-1.5 rounded-full',
-              recentCamera ? 'animate-pulse bg-state-heat' : 'bg-state-live',
-            ].join(' ')}
-          />
-          {recentCamera ? t('recentAlert', { name: recentCamera.name }) : t('camerasQuiet')}
-        </span>
-      </div>
-
-      <ul className="mt-auto flex flex-col gap-2.5">
+    <Section
+      title={t('cameras')}
+      meta={`${active}/${cameras.length}`}
+      href="/dashboard/cameras"
+      hrefLabel={t('seeAll')}
+      className={className}
+    >
+      <ul className="surface divide-y divide-border/70 overflow-hidden rounded-3xl">
         {cameras.map((camera) => {
           const recent =
-            !!camera.lastEventAt && Date.now() - new Date(camera.lastEventAt).getTime() < RECENT_MS;
+            camera.enabled &&
+            !!camera.lastEventAt &&
+            Date.now() - new Date(camera.lastEventAt).getTime() < RECENT_MS;
           const eventLabel = camera.lastEventType
             ? t((EVENT_KEY[camera.lastEventType] ?? 'eventMotion') as Parameters<typeof t>[0])
             : null;
@@ -87,25 +64,23 @@ export async function CamerasTile({ cameras, className }: { cameras: CameraOverv
             <li key={camera.id}>
               <Link
                 href={`/dashboard/cameras?camera=${camera.id}` as Route}
-                className="group flex items-center gap-3.5 rounded-2xl border border-border/60 bg-foreground/[0.03] px-3.5 py-3 transition-all duration-300 hover:border-border hover:bg-foreground/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group flex min-h-[3.75rem] items-center gap-3 px-5 py-3 transition-colors duration-300 hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
-                <span className="relative flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground">
-                  <Camera className="size-[1.1rem]" />
-                  {/* Punto de estado: verde activa, gris desactivada. */}
-                  <span
-                    className={[
-                      'absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-card',
-                      camera.enabled ? 'bg-state-live' : 'bg-muted-foreground/50',
-                    ].join(' ')}
-                  />
-                </span>
-
+                {/* Punto de estado: verde activa, violeta con aviso reciente, gris
+                    desactivada. El ámbar se reserva para la calefacción. */}
+                <span
+                  className={[
+                    'size-2.5 shrink-0 rounded-full',
+                    !camera.enabled ? 'bg-muted-foreground/40' : recent ? 'bg-primary' : 'bg-state-live',
+                  ].join(' ')}
+                  aria-hidden="true"
+                />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{camera.name}</span>
+                  <span className="block truncate font-medium leading-snug">{camera.name}</span>
                   <span
                     className={[
-                      'block truncate text-xs',
-                      recent ? 'font-medium text-state-heat-fg' : 'text-muted-foreground',
+                      'block truncate text-sm leading-snug',
+                      recent ? 'font-medium text-foreground' : 'text-muted-foreground',
                     ].join(' ')}
                   >
                     {!camera.enabled
@@ -115,13 +90,12 @@ export async function CamerasTile({ cameras, className }: { cameras: CameraOverv
                         : t('noEvents')}
                   </span>
                 </span>
-
                 <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-300 group-hover:translate-x-0.5" />
               </Link>
             </li>
           );
         })}
       </ul>
-    </Tile>
+    </Section>
   );
 }

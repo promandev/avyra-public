@@ -49,6 +49,10 @@
     --state-cool-fg: 196 90% 30%;
     --state-live-fg: 152 65% 26%;
 
+    /* Tinta sobre un relleno de estado a plena saturación (interruptor
+       encendido). Oscura en los dos temas: el relleno es siempre claro. */
+    --on-state: 250 45% 11%;
+
     /* Opacidad base del halo ambiental: el modo claro necesita menos. */
     --amb-strength: 0.55;
     --grain-opacity: 0.025;
@@ -128,6 +132,18 @@
     html {
       font-size: 19px;
     }
+  }
+
+  /* Lo que pinta el navegador también es de la marca. */
+  ::selection {
+    background-color: hsl(var(--primary) / 0.28);
+    color: hsl(var(--foreground));
+  }
+
+  input,
+  textarea,
+  [contenteditable] {
+    caret-color: hsl(var(--primary));
   }
 
   /* Las cifras (temperaturas, contadores) se leen mejor tabulares. */
@@ -355,6 +371,21 @@
 
   .dark .glass::before {
     background: linear-gradient(to bottom, hsl(0 0% 100% / 0.14), transparent 45%);
+  }
+
+  /* Superficie opaca. La portada la usa en lugar del vidrio: el estado se
+     lee por el tinte de la pieza y un fondo translúcido lo ensucia. */
+  .surface {
+    @apply border border-border/70 bg-card;
+    box-shadow:
+      0 1px 2px hsl(250 45% 11% / 0.04),
+      0 10px 24px -18px hsl(250 45% 11% / 0.2);
+  }
+
+  .dark .surface {
+    box-shadow:
+      0 1px 2px hsl(252 60% 2% / 0.4),
+      0 12px 28px -18px hsl(252 60% 2% / 0.8);
   }
 
   /* Superficie elevada para las piezas protagonistas (héroe, tarjetas de

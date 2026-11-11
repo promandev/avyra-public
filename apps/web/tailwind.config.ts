@@ -49,6 +49,8 @@ const config: Config = {
           'heat-fg': 'hsl(var(--state-heat-fg))',
           'cool-fg': 'hsl(var(--state-cool-fg))',
           'live-fg': 'hsl(var(--state-live-fg))',
+          /* Tinta sobre un relleno de estado a plena saturación. */
+          on: 'hsl(var(--on-state))',
         },
       },
       borderRadius: {

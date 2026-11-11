@@ -29,7 +29,7 @@ export function Greeting({ name }: { name: string }) {
 
   return (
     <p
-      className="flex min-h-[1.5rem] items-center text-sm font-medium tracking-wide text-muted-foreground transition-opacity duration-500"
+      className="flex min-h-[1.5rem] items-center text-sm text-muted-foreground transition-opacity duration-500"
       style={{ opacity: slot ? 1 : 0 }}
     >
       {slot ? t(`greeting.${slot}` as Parameters<typeof t>[0], { name }) : ' '}
